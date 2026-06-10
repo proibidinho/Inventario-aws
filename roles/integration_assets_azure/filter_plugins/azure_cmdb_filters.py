@@ -73,31 +73,48 @@ def map_azure_status_to_cmdb(powerstate):
     }
     return status_map.get(powerstate.lower() if powerstate else "", "Em uso")
 
+def get_tag(host_vars, *keys):
+    """
+    Retorna o valor da primeira tag encontrada (case-insensitive),
+    buscando em host_vars["tags"]. Util para tags Azure "ef_*".
+    """
+    tags = host_vars.get("tags", {}) or {}
+    tags_lower = {str(k).lower(): v for k, v in tags.items()}
+    for k in keys:
+        v = tags_lower.get(k.lower())
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def parse_bool_tag(value):
+    """Converte string de tag em booleano para campos Boolean do CMDB."""
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    return s in ("true", "sim", "yes", "1", "s", "y")
+
+
 def determine_ambiente_azure(host_vars):
-    """Determina o Ambiente com base nas tags do Azure."""
-    tags = host_vars.get("tags", {})
-    ambiente_tag = (
-        tags.get("ef_ambiente") or 
-        tags.get("environment") or 
-        tags.get("Environment") or
-        tags.get("ENVIRONMENT") or
-        tags.get("ambiente") or
-        ""
-    )
-    
+    """Determina o Ambiente com base nas tags do Azure (case-insensitive)."""
+    ambiente_tag = get_tag(
+        host_vars,
+        "ef_ambiente", "environment", "ambiente",
+    ) or ""
+
     if not ambiente_tag:
         return None
-    
-    ambiente_lower = ambiente_tag.lower()
-    
-    # Não produção - não preenche
+
+    ambiente_lower = str(ambiente_tag).lower()
+
+    # Nao producao - nao preenche
     if any(x in ambiente_lower for x in ["nonprod", "non-prod", "dev", "hml", "staging", "homolog", "qa", "test", "sandbox"]):
         return None
-    
-    # Produção
+
+    # Producao
     if any(x in ambiente_lower for x in ["prod", "prd", "production"]):
         return "Produção"
-    
+
     return None
 
 def transform_azure_host(host_vars):
@@ -168,7 +185,19 @@ def transform_azure_host(host_vars):
     
     # Extrair RAM e CPU do virtual_machine_size (nao disponivel diretamente)
     vm_size = host_vars.get("virtual_machine_size", "")
-    
+
+    # Tags Azure padrao "ef_*" -> chaves cloud_data (case-insensitive)
+    tag_owner    = get_tag(host_vars, "ef_owner")
+    tag_sistema  = get_tag(host_vars, "ef_projeto")
+    tag_produto  = get_tag(host_vars, "ef_produto")
+    tag_dr       = get_tag(host_vars, "ef_recuperacao_de_desastre", "ef_dr")
+    tag_regiao   = get_tag(host_vars, "ef_regiao", "ef_region")
+    tag_iac      = get_tag(host_vars, "ef_iac")
+
+    # Grupo Solucionador - Infra: fixo por SO (Windows -> Windows, Linux -> Infracloud)
+    so_detectado = extract_os_from_azure(host_vars)
+    grupo_solucionador = "Windows" if so_detectado == "Windows" else "Infracloud"
+
     # Montar cloud_data
     cloud_data = {
         # Identificacao
@@ -203,6 +232,20 @@ def transform_azure_host(host_vars):
         
         # Ambiente (baseado em tags)
         "ambiente_cloud": determine_ambiente_azure(host_vars),
+
+        # Last User (sempre Ansible, pois esta integracao escreve no CMDB)
+        "last_user_cloud": "Ansible",
+
+        # Grupo Solucionador - Infra (fixo por SO)
+        "grupo_solucionador_infra_cloud": grupo_solucionador,
+
+        # Tags Azure "ef_*" mapeadas (validar valores no CMDB antes de ativar no YAML)
+        "owner_cloud": tag_owner,
+        "sistema_cloud": tag_sistema,
+        "produto_cloud": tag_produto,
+        "vcenter_cloud": tag_regiao,
+        "iac_cloud": tag_iac,
+        "disaster_recovery_cloud": parse_bool_tag(tag_dr) if tag_dr is not None else None,
         
         # Metadados Azure (para referencia)
         "azure_vm_id": host_vars.get("vmid", ""),
@@ -340,21 +383,43 @@ def update_asset(cloud_data, object_attribute_map):
             data["attributes"].append(attribute_entry)
     
     # Pos-processamento: garantir fallback para atributos com "valor_fallback"
-    # que nao foram preenchidos (ex.: vm_size veio vazio do Azure)
+    # ou "valor_fixo" que nao foram preenchidos (ex.: tag ausente no host Azure).
+    # Permite que qualquer campo declare seu default direto no YAML, sem mexer
+    # no transform (Python).
     ids_ja_enviados = {a["objectTypeAttributeId"] for a in data["attributes"]}
     for obj_attr in object_attribute_map:
-        valor_fallback = obj_attr.get("valor_fallback")
         attr_id = str(obj_attr.get("id"))
-        if not valor_fallback or attr_id in ids_ja_enviados:
+        if attr_id in ids_ja_enviados:
             continue
-        if obj_attr.get("tipo") != "objeto":
+
+        valor_default = obj_attr.get("valor_fallback")
+        if valor_default is None:
+            valor_default = obj_attr.get("valor_fixo")
+        if valor_default is None:
             continue
-        valores = obj_attr.get("valores", [])
-        matched = next((v for v in valores if v.get("value") == valor_fallback), None)
-        if matched:
+
+        tipo = obj_attr.get("tipo")
+
+        # Tipo objeto: traduzir o "value" para o "referencedType" via lista valores
+        if tipo == "objeto":
+            valores = obj_attr.get("valores", [])
+            matched = next((v for v in valores if v.get("value") == valor_default), None)
+            if matched:
+                data["attributes"].append({
+                    "objectTypeAttributeId": attr_id,
+                    "objectAttributeValues": [{"value": str(matched.get("referencedType"))}]
+                })
+        # Tipo boolean: enviar "true"/"false"
+        elif tipo == "boolean":
             data["attributes"].append({
                 "objectTypeAttributeId": attr_id,
-                "objectAttributeValues": [{"value": str(matched.get("referencedType"))}]
+                "objectAttributeValues": [{"value": str(bool(valor_default)).lower()}]
+            })
+        # Tipos text/select/integer: enviar o valor como string
+        elif tipo in ("text", "select", "integer"):
+            data["attributes"].append({
+                "objectTypeAttributeId": attr_id,
+                "objectAttributeValues": [{"value": str(valor_default)}]
             })
 
     return data
