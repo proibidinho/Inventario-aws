@@ -1,16 +1,14 @@
 # =============================================================================
-# Tasks - Criar servidor no CMDB a partir dos ansible_facts ja coletados
+# Role cmdb_sync - tasks/main.yml
+# Cria 1 servidor no CMDB a partir dos ansible_facts ja coletados.
 # =============================================================================
-# Espera:
-#   - facts do host disponiveis em hostvars[target_host]
-#   - target_host  : nome/IP do host no inventario dinamico
-#   - datacenter_target (opcional) : nome do DC (ex.: "Lapa")
+# Variaveis esperadas (group_vars/all.yml + survey do workflow):
+#   - target_host             : nome/IP do host (definido na Fase 1 do playbook)
+#   - operation_system_name   : opcional - vem do survey
+#   - datacenter_name         : opcional - vem do survey
+#   - cmdb (defaults)         : mappings (group_vars/all.yml)
 # =============================================================================
 ---
-- name: Carregar mapeamento CMDB
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/vars/cmdb_mapping.yml"
-
 # -----------------------------------------------------------------------------
 # Atalho: pegar os facts do host alvo
 # -----------------------------------------------------------------------------
@@ -66,7 +64,7 @@
     interface_rede_ids: []
 
 - name: Gerenciar Interfaces de Rede
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/manage_network_interface.yml"
+  ansible.builtin.include_tasks: manage_network_interface.yml
   loop: "{{ ips_validos }}"
   loop_control:
     loop_var: ip_info_str

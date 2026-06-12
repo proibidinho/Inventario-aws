@@ -118,13 +118,12 @@
   gather_facts: false
   vars:
     target_host: "{{ hostvars['localhost']['target_host'] }}"
-  tasks:
+  pre_tasks:
     - name: Verificar credenciais Jira
       ansible.builtin.assert:
         that:
           - lookup('env', 'JIRA_USER') | length > 0
           - lookup('env', 'JIRA_PASSWORD') | length > 0
         fail_msg: "Defina JIRA_USER e JIRA_PASSWORD como variaveis de ambiente"
-
-    - name: Criar servidor no CMDB
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/cmdb_create_servidor.yml"
+  roles:
+    - role: cmdb_sync

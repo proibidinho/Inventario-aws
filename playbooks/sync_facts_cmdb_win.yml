@@ -164,6 +164,5 @@
           - lookup('env', 'JIRA_PASSWORD') | length > 0
         fail_msg: "Defina JIRA_USER e JIRA_PASSWORD como variaveis de ambiente"
 
-  tasks:
-    - name: Criar servidor no CMDB
-      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/cmdb_create_servidor.yml"
+  roles:
+    - role: cmdb_sync
