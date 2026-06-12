@@ -1,0 +1,52 @@
+# =============================================================================
+# ENTRY POINT - Sync CMDB a partir de Ansible Facts
+# =============================================================================
+# Importa o playbook correto (Linux ou Windows) conforme operation_system_name.
+# Use ESTE arquivo no Job Template "cmdb-sync" do AAP.
+#
+# Variaveis (vem do survey do Workflow Job Template):
+#   - name                    : hostname OU "hostname|10.0.0.1,10.0.0.2"
+#   - operation_system_name   : Oracle_Linux_8 | Oracle_Linux_9 | RHEL_9 |
+#                               Windows_Server_2022 | Windows_Server_2025
+#   - datacenter_name         : Campinas | Lapa | Mackenzie
+#   - amount_vms              : (informativo) total de VMs do fluxo
+#
+# No Job Template:
+#   - Instance Group  -> Prompt on Launch (definir por DC no workflow)
+#   - Credentials     -> Prompt on Launch (definir por DC no workflow)
+#   - Survey          -> conforme variaveis acima
+# =============================================================================
+---
+- name: "Validar entradas do survey"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    sos_linux:   ["Oracle_Linux_8", "Oracle_Linux_9", "RHEL_9"]
+    sos_windows: ["Windows_Server_2022", "Windows_Server_2025"]
+  tasks:
+    - name: Validar variaveis obrigatorias
+      ansible.builtin.assert:
+        that:
+          - name is defined and (name | length > 0)
+          - operation_system_name is defined and operation_system_name in (sos_linux + sos_windows)
+          - datacenter_name is defined and datacenter_name in ['Campinas','Lapa','Mackenzie']
+        fail_msg: "Variaveis ausentes ou invalidas. Verifique o survey do workflow."
+
+    - name: Resumo
+      ansible.builtin.debug:
+        msg:
+          - "========================================================"
+          - "Host ............: {{ name }}"
+          - "SO ..............: {{ operation_system_name }}"
+          - "Datacenter ......: {{ datacenter_name }}"
+          - "Total VMs no fluxo: {{ amount_vms | default('(nao informado)') }}"
+          - "========================================================"
+
+# -----------------------------------------------------------------------------
+# Roteamento por familia de SO
+# -----------------------------------------------------------------------------
+- import_playbook: sync_facts_cmdb_lnx.yml
+  when: operation_system_name in ["Oracle_Linux_8", "Oracle_Linux_9", "RHEL_9"]
+
+- import_playbook: sync_facts_cmdb_win.yml
+  when: operation_system_name in ["Windows_Server_2022", "Windows_Server_2025"]
