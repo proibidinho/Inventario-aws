@@ -16,6 +16,7 @@
 #   - vms_provisionadas       : lista de {hostname, ip}
 #   - operation_system_name   : Oracle_Linux_8|9, RHEL_8|9, Windows_Server_2022|2025
 #   - datacenter_name         : Campinas | Lapa | Mackenzie
+#   - environment_name        : Desenvolvimento | Homologação | Produção | ...
 #
 # Pre-requisitos:
 #   - JIRA_USER e JIRA_PASSWORD como variaveis de ambiente
@@ -31,12 +32,13 @@
     sos_windows: ["Windows_Server_2022", "Windows_Server_2025"]
   tasks:
 
-    - name: "Validar vms_provisionadas / operation_system_name / datacenter_name"
+    - name: "Validar vms_provisionadas / operation_system_name / datacenter_name / environment_name"
       ansible.builtin.assert:
         that:
           - vms_provisionadas is defined and (vms_provisionadas | length > 0)
           - operation_system_name is defined and operation_system_name in (sos_linux + sos_windows)
           - datacenter_name is defined and datacenter_name in ['Campinas','Lapa','Mackenzie']
+          - environment_name is defined and environment_name in ['Certificação','Desenvolvimento','Homologação','Legado','OPDK','Pré-Produção','Produção','Produção Disaster Recovery','Produção Nextel','Projeto','SaaS','SaaS-Eng','Secure Agent','Teste','Treinamento']
         fail_msg: "Variaveis ausentes ou invalidas. Verifique o survey/workflow."
 
     - name: "Validar credenciais Jira"
@@ -55,6 +57,7 @@
         msg:
           - "================================================================"
           - "Datacenter ......: {{ datacenter_name }}"
+          - "Ambiente ........: {{ environment_name }}"
           - "SO ..............: {{ operation_system_name }} ({{ familia_so }})"
           - "VMs alvo ........: {{ vms_provisionadas | map(attribute='hostname') | list }}"
           - "================================================================"

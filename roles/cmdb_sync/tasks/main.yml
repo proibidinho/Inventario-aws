@@ -54,7 +54,9 @@
       - "Disco (GB):         {{ disco_total_gb }}"
       - "IPs:                {{ ips_validos }}"
       - "Datacenter:         {{ datacenter_name | default('(nao informado)') }}"
-      - "Total VMs no fluxo: {{ amount_vms | default('(nao informado)') }}"
+      - "Ambiente:           {{ environment_name | default('(nao informado)') }}"
+      - "Modelo:             VMWare"
+      - "Fornecedor:         {{ cmdb.fornecedor_por_so[operation_system_name] | default('(nao informado)') if operation_system_name is defined else '(nao informado)' }}"
 
 # -----------------------------------------------------------------------------
 # Criar/buscar as Interfaces de Rede (cada IP vira um objeto no CMDB)
@@ -95,6 +97,9 @@
       - { id: "{{ cmdb.attr_ids.ipe }}",                 value: "false" }
       - { id: "{{ cmdb.attr_ids.disaster_recovery }}",   value: "false" }
       - { id: "{{ cmdb.attr_ids.datacenter }}",          value: "{{ cmdb.datacenter_ids[datacenter_name] | default('') if datacenter_name is defined else '' }}" }
+      - { id: "{{ cmdb.attr_ids.ambiente }}",            value: "{{ cmdb.ambiente_ids[environment_name] | default('') if environment_name is defined else '' }}" }
+      - { id: "{{ cmdb.attr_ids.modelo_servidor }}",     value: "{{ cmdb.modelo_servidor_ids['VMWare'] }}" }
+      - { id: "{{ cmdb.attr_ids.fornecedor }}",          value: "{{ cmdb.fornecedor_por_so[operation_system_name] | default('') if operation_system_name is defined else '' }}" }
 
 - name: Iniciar lista final de attributes
   ansible.builtin.set_fact:

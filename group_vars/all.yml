@@ -33,6 +33,39 @@ windows_user_password: ""
 # Mapeamentos value -> referencedType
 # -----------------------------------------------------------------------------
 cmdb:
+  # Ambiente (atributo 1922, ref:153) - vir via "environment_name" do survey
+  ambiente_ids:
+    Certificação:               169398
+    Desenvolvimento:            166232
+    Homologação:                166233
+    Legado:                     169924
+    OPDK:                       1262312
+    "Pré-Produção":             169886
+    "Produção":                 166234
+    "Produção Disaster Recovery": 258021
+    "Produção Nextel":          258023
+    Projeto:                    258018
+    SaaS:                       1262311
+    "SaaS-Eng":                 1262313
+    "Secure Agent":             2936927
+    Teste:                      169397
+    Treinamento:                169416
+
+  # Modelo de Servidor (atributo 15656, ref:406) - fixo "VMWare" para servidores
+  # provisionados no VMware. Fallback "Generic" se um dia mudar.
+  modelo_servidor_ids:
+    VMWare:  3230997
+    Generic: 3223981
+
+  # Fornecedor (atributo 6829, Text livre) - derivado de operation_system_name
+  fornecedor_por_so:
+    Oracle_Linux_8:      "Oracle"
+    Oracle_Linux_9:      "Oracle"
+    RHEL_8:              "Red Hat"
+    RHEL_9:              "Red Hat"
+    Windows_Server_2022: "Microsoft"
+    Windows_Server_2025: "Microsoft"
+
   # Sistema Operacional (atributo 3358, ref:150)
   so_ids:
     Linux:   171174
@@ -113,3 +146,6 @@ cmdb:
     ipe:                "9648"
     disaster_recovery:  "10677"
     datacenter:         "3296"
+    ambiente:           "1922"
+    modelo_servidor:    "15656"
+    fornecedor:         "6829"
