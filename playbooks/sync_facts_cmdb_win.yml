@@ -1,11 +1,13 @@
 # =============================================================================
 # PLAYBOOK - Sync 1 servidor WINDOWS (VMware) -> CMDB via Ansible Facts
-# Padrao: Fase 1 = CyberArk + WinRM probe, Fase 2 = facts, Fase 3 = role CMDB
+# Padrao: Fase 1 = CyberArk + WinRM probe, Fase 2 = facts, Fase 3 = criar CMDB
 # =============================================================================
 #
-# Extra-vars esperados (Job Template AAP):
-#   - name              : hostname puro OU "hostname|10.0.0.1,10.0.0.2"
-#   - datacenter_target : (opcional) nome do DC fisico no CMDB (ex.: "Lapa", "Mackenzie")
+# Variaveis (vem do survey do Workflow Job Template, propagadas como extra-vars):
+#   - name                    : hostname OU "hostname|10.0.0.1,10.0.0.2"
+#   - operation_system_name   : Windows_Server_2022 | Windows_Server_2025
+#   - datacenter_name         : Lapa | Mackenzie | Campinas
+#   - amount_vms              : (informativo) total de VMs do fluxo
 #
 # Pre-requisitos:
 #   - JIRA_USER e JIRA_PASSWORD como variaveis de ambiente
@@ -162,5 +164,6 @@
           - lookup('env', 'JIRA_PASSWORD') | length > 0
         fail_msg: "Defina JIRA_USER e JIRA_PASSWORD como variaveis de ambiente"
 
-  roles:
-    - role: integration_assets_facts
+  tasks:
+    - name: Criar servidor no CMDB
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/cmdb_create_servidor.yml"

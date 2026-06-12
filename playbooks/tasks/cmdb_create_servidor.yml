@@ -1,0 +1,148 @@
+# =============================================================================
+# Tasks - Criar servidor no CMDB a partir dos ansible_facts ja coletados
+# =============================================================================
+# Espera:
+#   - facts do host disponiveis em hostvars[target_host]
+#   - target_host  : nome/IP do host no inventario dinamico
+#   - datacenter_target (opcional) : nome do DC (ex.: "Lapa")
+# =============================================================================
+---
+- name: Carregar mapeamento CMDB
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/vars/cmdb_mapping.yml"
+
+# -----------------------------------------------------------------------------
+# Atalho: pegar os facts do host alvo
+# -----------------------------------------------------------------------------
+- name: Atalho para os facts do host alvo
+  ansible.builtin.set_fact:
+    f: "{{ hostvars[target_host] }}"
+
+# -----------------------------------------------------------------------------
+# Categorizacao simples dos facts (so Jinja, sem Python)
+# -----------------------------------------------------------------------------
+- name: Normalizar facts em variaveis simples
+  ansible.builtin.set_fact:
+    # Se operation_system_name veio do workflow, usa ele; senao detecta via facts
+    so_normalizado: >-
+      {{
+        cmdb.so_categoria[operation_system_name]
+        if (operation_system_name is defined and operation_system_name in cmdb.so_categoria)
+        else ('Windows' if (f.ansible_os_family | default('')) == 'Windows' else 'Linux')
+      }}
+    tipo_infra_normalizado: "{{ 'MAQUINA VIRTUAL' if (f.ansible_virtualization_role | default('')) == 'guest' else 'SERVIDOR FISICO' }}"
+    disco_total_gb: "{{ ((f.ansible_mounts | default([]) | map(attribute='size_total') | sum) / 1073741824) | round(1) }}"
+    ips_validos: >-
+      {{
+        (
+          (f.ansible_all_ipv4_addresses | default([]))
+          + (f.ansible_ip_addresses | default([]))
+          + (f.ansible_interfaces | default([]) | selectattr('ipv4', 'defined') | map(attribute='ipv4.address') | list)
+        )
+        | select('match', '^\d{1,3}(\.\d{1,3}){3}$')
+        | reject('match', '^127\.')
+        | unique | list
+      }}
+
+- name: DEBUG - dados categorizados
+  ansible.builtin.debug:
+    msg:
+      - "Host:               {{ f.ansible_hostname | default(target_host) }}"
+      - "operation_system:   {{ operation_system_name | default('(nao informado)') }}"
+      - "SO categoria:       {{ so_normalizado }}"
+      - "Tipo:               {{ tipo_infra_normalizado }}"
+      - "RAM (MB):           {{ f.ansible_memtotal_mb | default('-') }}"
+      - "vCPUs:              {{ f.ansible_processor_vcpus | default('-') }}"
+      - "Disco (GB):         {{ disco_total_gb }}"
+      - "IPs:                {{ ips_validos }}"
+      - "Datacenter:         {{ datacenter_name | default('(nao informado)') }}"
+      - "Total VMs no fluxo: {{ amount_vms | default('(nao informado)') }}"
+
+# -----------------------------------------------------------------------------
+# Criar/buscar as Interfaces de Rede (cada IP vira um objeto no CMDB)
+# -----------------------------------------------------------------------------
+- name: Inicializar lista de NIC IDs
+  ansible.builtin.set_fact:
+    interface_rede_ids: []
+
+- name: Gerenciar Interfaces de Rede
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../roles/integration_assets_azure/tasks/manage_network_interface.yml"
+  loop: "{{ ips_validos }}"
+  loop_control:
+    loop_var: ip_info_str
+  vars:
+    ip_info: { ip: "{{ ip_info_str }}" }
+  when: ips_validos | length > 0
+
+# -----------------------------------------------------------------------------
+# Montar payload do CMDB
+# Cada entrada de attrs_raw: { id: '<atributo>', value: '<valor ou ID>' }
+# Atributos com value vazio/nulo sao descartados.
+# -----------------------------------------------------------------------------
+- name: Definir atributos brutos do payload
+  ansible.builtin.set_fact:
+    attrs_raw:
+      - { id: "{{ cmdb.attr_ids.name }}",                value: "{{ f.ansible_hostname | default(target_host) }}" }
+      - { id: "{{ cmdb.attr_ids.fqdn }}",                value: "{{ f.ansible_fqdn | default(f.ansible_hostname | default(target_host)) }}" }
+      - { id: "{{ cmdb.attr_ids.sistema_operacional }}", value: "{{ cmdb.so_ids[so_normalizado] | default('') }}" }
+      - { id: "{{ cmdb.attr_ids.versao_so }}",           value: "{{ cmdb.versao_so_ids[operation_system_name] | default('') if operation_system_name is defined else '' }}" }
+      - { id: "{{ cmdb.attr_ids.memoria_ram }}",         value: "{{ f.ansible_memtotal_mb | default('') }}" }
+      - { id: "{{ cmdb.attr_ids.cpu_count }}",           value: "{{ f.ansible_processor_vcpus | default('') }}" }
+      - { id: "{{ cmdb.attr_ids.capacidade_disco }}",    value: "{{ (disco_total_gb ~ ' GB') if (disco_total_gb | float) > 0 else '' }}" }
+      - { id: "{{ cmdb.attr_ids.tipo_infraestrutura }}", value: "{{ cmdb.tipo_infra_ids[tipo_infra_normalizado] | default('') }}" }
+      - { id: "{{ cmdb.attr_ids.status }}",              value: "{{ cmdb.status_em_uso_id }}" }
+      - { id: "{{ cmdb.attr_ids.status_discovery }}",    value: "{{ cmdb.status_discovery_running_id }}" }
+      - { id: "{{ cmdb.attr_ids.last_user }}",           value: "Ansible" }
+      - { id: "{{ cmdb.attr_ids.sox }}",                 value: "false" }
+      - { id: "{{ cmdb.attr_ids.ipe }}",                 value: "false" }
+      - { id: "{{ cmdb.attr_ids.disaster_recovery }}",   value: "false" }
+      - { id: "{{ cmdb.attr_ids.datacenter }}",          value: "{{ cmdb.datacenter_ids[datacenter_name] | default('') if datacenter_name is defined else '' }}" }
+
+- name: Iniciar lista final de attributes
+  ansible.builtin.set_fact:
+    cmdb_attributes: []
+
+- name: Adicionar atributos nao-vazios (formato Jira Assets)
+  ansible.builtin.set_fact:
+    cmdb_attributes: "{{ cmdb_attributes + [ {'objectTypeAttributeId': item.id, 'objectAttributeValues': [{'value': item.value | string}]} ] }}"
+  loop: "{{ attrs_raw }}"
+  when: item.value | string | length > 0
+
+- name: Adicionar Interface de Rede ao payload (se houver)
+  ansible.builtin.set_fact:
+    cmdb_attributes: "{{ cmdb_attributes + [ {'objectTypeAttributeId': cmdb.attr_ids.interface_rede, 'objectAttributeValues': interface_rede_ids | map('regex_replace', '^(.*)$', '{\"value\": \"\\1\"}') | map('from_json') | list } ] }}"
+  when: interface_rede_ids | length > 0
+
+- name: Montar payload final
+  ansible.builtin.set_fact:
+    data_create:
+      objectTypeId: "{{ object_type_id_servidor }}"
+      attributes: "{{ cmdb_attributes }}"
+
+- name: DEBUG - payload final
+  ansible.builtin.debug:
+    msg: "{{ data_create | to_nice_json }}"
+
+# -----------------------------------------------------------------------------
+# Criar no CMDB
+# -----------------------------------------------------------------------------
+- name: Criar servidor no Jira Assets
+  ansible.builtin.uri:
+    url: "{{ jira_url }}/object/create"
+    method: POST
+    force_basic_auth: true
+    headers:
+      Content-Type: "application/json"
+      Accept: "application/json"
+    user: "{{ jira_user }}"
+    password: "{{ jira_password }}"
+    body: "{{ data_create | to_json }}"
+    body_format: json
+    return_content: true
+    status_code: [200, 201]
+  register: resultado_create
+  environment: "{{ proxy_env | default({}) }}"
+
+- name: Resultado
+  ansible.builtin.debug:
+    msg: "OK - Servidor '{{ f.ansible_hostname | default(target_host) }}' criado no CMDB. ID: {{ resultado_create.json.id | default('?') }}"

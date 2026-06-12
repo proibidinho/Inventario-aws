@@ -3,9 +3,11 @@
 # Autenticacao: SSH com chave de confianca (sem CyberArk por enquanto).
 # =============================================================================
 #
-# Extra-vars esperados (Job Template AAP):
-#   - name              : hostname puro OU "hostname|10.0.0.1,10.0.0.2"
-#   - datacenter_target : (opcional) ex.: "Lapa", "Mackenzie", "Ingleses", ...
+# Variaveis (vem do survey do Workflow Job Template, propagadas como extra-vars):
+#   - name                    : hostname OU "hostname|10.0.0.1,10.0.0.2"
+#   - operation_system_name   : Oracle_Linux_8 | Oracle_Linux_9 | RHEL_9
+#   - datacenter_name         : Lapa | Mackenzie | Campinas
+#   - amount_vms              : (informativo) total de VMs do fluxo
 #
 # Pre-requisitos:
 #   - JIRA_USER e JIRA_PASSWORD como variaveis de ambiente
@@ -116,5 +118,13 @@
   gather_facts: false
   vars:
     target_host: "{{ hostvars['localhost']['target_host'] }}"
-  roles:
-    - role: integration_assets_facts
+  tasks:
+    - name: Verificar credenciais Jira
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'JIRA_USER') | length > 0
+          - lookup('env', 'JIRA_PASSWORD') | length > 0
+        fail_msg: "Defina JIRA_USER e JIRA_PASSWORD como variaveis de ambiente"
+
+    - name: Criar servidor no CMDB
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/cmdb_create_servidor.yml"

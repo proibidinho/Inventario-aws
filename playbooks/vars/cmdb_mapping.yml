@@ -1,0 +1,106 @@
+# =============================================================================
+# Vars - Mapeamento facts -> CMDB (Jira Assets)
+# =============================================================================
+# Concentra TODOS os IDs e mapeamentos que precisam de manutencao.
+# Para acrescentar/remover um valor (ex.: novo Datacenter), edite apenas
+# este arquivo. Os playbooks nao precisam ser tocados.
+# =============================================================================
+---
+# Jira Assets - conexao
+workspace: "76827f8b-4d96-46a6-abf2-f592d6b4b2d9"
+jira_url: "https://api.atlassian.com/jsm/insight/workspace/{{ workspace }}/v1"
+jira_user: "{{ lookup('env', 'JIRA_USER') }}"
+jira_password: "{{ lookup('env', 'JIRA_PASSWORD') }}"
+
+# IDs do objectType "Servidor"
+object_type_id_servidor: 121
+nic_name_attribute_id: "1890"
+
+# Proxy
+proxy_env:
+  http_proxy: "http://10.54.24.184:3128"
+  https_proxy: "http://10.54.24.184:3128"
+  no_proxy: ""
+
+# -----------------------------------------------------------------------------
+# Mapeamentos value -> referencedType
+# -----------------------------------------------------------------------------
+cmdb:
+  # Sistema Operacional (atributo 3358, ref:150)
+  so_ids:
+    Linux:   171174
+    Windows: 170882
+    Unix:    174028
+    SOLARIS: 174025
+    SUNOS:   174026
+    HPUX:    174027
+    MacOS:   872222
+    ESXi:    1460417
+
+  # Versao SO (atributo 3471, ref:343) - mapeado a partir de operation_system_name
+  # do workflow. Para acrescentar valor novo, basta colocar a entrada aqui.
+  versao_so_ids:
+    Oracle_Linux_8:      2413426   # "Oracle Linux Server 8.10"
+    Oracle_Linux_9:      3062950   # "Oracle Linux Server 9.6"
+    RHEL_9:              1919152   # "Red Hat Enterprise Linux 9.6 (Plow)"
+    Windows_Server_2022: 340320    # "Microsoft Windows Server 2022 Standard"
+    Windows_Server_2025: 2414380   # "Windows Server 2025 Standard"
+
+  # operation_system_name -> "Linux" / "Windows" (categoria do SO)
+  so_categoria:
+    Oracle_Linux_8:      Linux
+    Oracle_Linux_9:      Linux
+    RHEL_9:              Linux
+    Windows_Server_2022: Windows
+    Windows_Server_2025: Windows
+
+  # Tipo de Infraestrutura (atributo 9948, ref:119)
+  tipo_infra_ids:
+    "MAQUINA VIRTUAL": 257344
+    "SERVIDOR FISICO": 223967
+    "CLOUD PUBLICA":   223965
+    "CLOUD PRIVADA":   169567
+    "MAINFRAME":       223966
+    "RANCHER":         2316248
+
+  # Datacenter (atributo 3296, ref:152) - opcional via extra-var "datacenter_target"
+  datacenter_ids:
+    Lapa:                              168954
+    Mackenzie:                         168963
+    Ingleses:                          168955
+    Campinas:                          168964
+    "Belém":                           219565
+    "Palhoça":                         1470677
+    "Rio de Janeiro":                  219568
+    "Rio Grande do Sul":               219569
+    Nextel:                            219566
+    Azure:                             2277528
+    AWS:                               872214
+    "Google Cloud":                    872213
+    "Oracle Cloud":                    219567
+    "Sala Técnica 9º Andar - Mackenzie": 549865
+
+  # Status (atributo 2957) - usamos sempre "Em uso" para servidores novos
+  status_em_uso_id: 18
+
+  # Status Discovery (atributo 3053) - sempre "Running"
+  status_discovery_running_id: 24
+
+  # IDs dos atributos do CMDB (caso o time renomeie/recrie algum, mudar aqui)
+  attr_ids:
+    name:               "1104"
+    fqdn:               "3343"
+    sistema_operacional: "3358"
+    versao_so:          "3471"
+    memoria_ram:        "6840"
+    cpu_count:          "3359"
+    capacidade_disco:   "3613"
+    interface_rede:     "3528"
+    tipo_infraestrutura: "9948"
+    status:             "2957"
+    status_discovery:   "3053"
+    last_user:          "3357"
+    sox:                "9647"
+    ipe:                "9648"
+    disaster_recovery:  "10677"
+    datacenter:         "3296"
